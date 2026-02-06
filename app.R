@@ -8,7 +8,7 @@ library(DT)
 TZ_LOCAL <- "America/Los_Angeles"  # Pacific
 
 ui <- fluidPage(
-  tags$h2("Movebank → Leaflet + Table (shinylive)"),
+  tags$h2("Movebank Data Viewer"),
   
   tags$style(HTML("
     .map-wrap { width: 100%; }
@@ -65,7 +65,7 @@ ui <- fluidPage(
             
             tags$hr(),
             
-            actionButton("fetch", "Fetch events"),
+            actionButton("fetch", "Load Collar Data"),
             
             tags$hr(),
             
