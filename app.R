@@ -460,8 +460,20 @@ server <- function(input, output, session) {
   # Base map
   output$map <- renderLeaflet({
     leaflet() %>%
-      addProviderTiles("CartoDB.Positron") %>%
-      addScaleBar(position = "bottomleft")
+      addProviderTiles("CartoDB.Positron", group = "Light") %>%
+      addProviderTiles("CartoDB.DarkMatter", group = "Dark") %>%
+      addProviderTiles("Esri.WorldImagery", group = "Satellite") %>%
+      addProviderTiles("Esri.WorldTopoMap", group = "Topo") %>%
+      addTiles(
+        urlTemplate = "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}",
+        attribution = "USGS The National Map",
+        group = "USGS Topo"
+      ) %>% 
+      addScaleBar(position = "bottomleft") %>%
+      addLayersControl(
+        baseGroups = c("Light", "Dark", "Satellite", "Topo", "USGS Topo"),
+        options = layersControlOptions(collapsed = TRUE)
+      )
   })
   
   # Points + legend + zoom (shinylive-safe palettes)
