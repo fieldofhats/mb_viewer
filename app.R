@@ -85,7 +85,13 @@ ui <- fluidPage(
             ),
             uiOutput("date_ui"),
             tags$small(style="display:block; margin-top:-6px; color:#666;",
-                       "If 'last N days' is set, it overrides the date range.")
+                       "If 'last N days' is set, it overrides the date range."),
+            checkboxInput(
+              "keep_qpf_only",
+              "Keep only good fixes (gps_fix_type_raw contains 'QFP')",
+              value = FALSE
+            ),
+            
           ),
           
           tabPanel(
@@ -387,6 +393,18 @@ server <- function(input, output, session) {
     
     df <- df[is.finite(df$location_lat) & is.finite(df$location_long), , drop = FALSE]
     if (nrow(df) == 0) return(df)
+    
+    # optional fix-quality filter
+    if (isTRUE(input$keep_qpf_only)) {
+      if ("gps_fix_type_raw" %in% names(df)) {
+        df <- df[grepl("QFP", df$gps_fix_type_raw %||% "", fixed = TRUE), , drop = FALSE]
+      } else {
+        # if field missing, return empty rather than silently ignoring
+        df <- df[0, , drop = FALSE]
+      }
+      if (nrow(df) == 0) return(df)
+    }
+    
     
     has_time <- "timestamp_utc" %in% names(df) && any(!is.na(df$timestamp_utc))
     
