@@ -8,7 +8,7 @@ library(DT)
 TZ_LOCAL <- "America/Los_Angeles"  # Pacific
 
 ui <- fluidPage(
-  tags$h2("Movebank Data Link"),
+  tags$h2("Movebank → Leaflet + Table (shinylive)"),
   
   tags$style(HTML("
     .map-wrap { width: 100%; }
@@ -51,7 +51,7 @@ ui <- fluidPage(
             passwordInput("mb_pass", "Movebank password", value = ""),
             numericInput("study_id", "Study ID", value = 8038997102, min = 1, step = 1),
             textInput("sensor_type_id", "Sensor type id (optional)", value = ""),
-            #checkboxInput("accept_license", "accept_license=true", value = FALSE),
+            checkboxInput("accept_license", "accept_license=true", value = FALSE),
             
             tags$hr(),
             
@@ -65,7 +65,7 @@ ui <- fluidPage(
             
             tags$hr(),
             
-            actionButton("fetch", "Load Collar Data"),
+            actionButton("fetch", "Fetch events"),
             
             tags$hr(),
             
@@ -85,13 +85,7 @@ ui <- fluidPage(
             ),
             uiOutput("date_ui"),
             tags$small(style="display:block; margin-top:-6px; color:#666;",
-                       "If 'last N days' is set, it overrides the date range."),
-            checkboxInput(
-              "keep_qpf_only",
-              "Keep only good fixes (gps_fix_type_raw contains 'QFP')",
-              value = FALSE
-            ),
-            
+                       "If 'last N days' is set, it overrides the date range.")
           ),
           
           tabPanel(
@@ -218,10 +212,8 @@ ui <- fluidPage(
     var el = document.getElementById('pt_color_single');
     if (!el) return;
 
-    // send initial value once
     Shiny.setInputValue('pt_color_single', el.value, {priority: 'event'});
 
-    // send updates
     el.addEventListener('input', function() {
       Shiny.setInputValue('pt_color_single', el.value, {priority: 'event'});
     });
@@ -238,7 +230,6 @@ ui <- fluidPage(
     setTimeout(bindColorPicker, 0);
   });
 
-  // best-effort rebind after dynamic UI changes (e.g., conditionalPanel toggles)
   if (window.jQuery) {
     $(document).on('shiny:value', function() {
       setTimeout(bindColorPicker, 0);
@@ -397,18 +388,6 @@ server <- function(input, output, session) {
     df <- df[is.finite(df$location_lat) & is.finite(df$location_long), , drop = FALSE]
     if (nrow(df) == 0) return(df)
     
-    # optional fix-quality filter
-    if (isTRUE(input$keep_qpf_only)) {
-      if ("gps_fix_type_raw" %in% names(df)) {
-        df <- df[grepl("QFP", df$gps_fix_type_raw %||% "", fixed = TRUE), , drop = FALSE]
-      } else {
-        # if field missing, return empty rather than silently ignoring
-        df <- df[0, , drop = FALSE]
-      }
-      if (nrow(df) == 0) return(df)
-    }
-    
-    
     has_time <- "timestamp_utc" %in% names(df) && any(!is.na(df$timestamp_utc))
     
     # last N days anchored to newest loaded point wins
@@ -481,34 +460,19 @@ server <- function(input, output, session) {
   # Base map
   output$map <- renderLeaflet({
     leaflet() %>%
-      addProviderTiles("CartoDB.Positron", group = "Light") %>%
-      addProviderTiles("CartoDB.DarkMatter", group = "Dark") %>%
-      addProviderTiles("Esri.WorldImagery", group = "Satellite") %>%
-      addProviderTiles("Esri.WorldTopoMap", group = "Topo") %>%
-      addTiles(
-        urlTemplate = "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}",
-        attribution = "USGS The National Map",
-        group = "USGS Topo"
-      ) %>% 
-      addScaleBar(position = "bottomleft") %>%
-      addLayersControl(
-        baseGroups = c("Light", "Dark", "Satellite", "Topo", "USGS Topo"),
-        options = layersControlOptions(collapsed = TRUE)
-      )
+      addProviderTiles("CartoDB.Positron") %>%
+      addScaleBar(position = "bottomleft")
   })
   
-  # Points + legend + zoom
+  # Points + legend + zoom (shinylive-safe palettes)
   observeEvent(
     list(plot_df(), input$pt_radius, input$pt_color_mode, input$pt_color_single),
     {
       df <- plot_df()
-      proxy <- leafletProxy("map")
-      
-      proxy %>%
+      proxy <- leafletProxy("map") %>%
         clearGroup("points") %>%
         clearGroup("selected") %>%
-        clearGroup("tracks") %>%
-        clearControls()
+        removeControl("points_legend")
       
       if (nrow(df) == 0) return()
       
@@ -519,13 +483,23 @@ server <- function(input, output, session) {
         col <- input$pt_color_single %||% "#1f77b4"
         cols <- rep(col, nrow(df))
       } else if ("individual_local_identifier" %in% names(df)) {
-        pal <- colorFactor("Set1", domain = df$individual_local_identifier)
-        cols <- pal(df$individual_local_identifier)
+        ids <- as.character(df$individual_local_identifier)
+        u <- sort(unique(ids))
+        
+        cols_u <- grDevices::hcl(
+          h = seq(15, 375, length.out = length(u) + 1)[-(length(u) + 1)],
+          c = 100, l = 55
+        )
+        col_map <- setNames(cols_u, u)
+        cols <- unname(col_map[ids])
+        
         proxy <- proxy %>% addLegend(
-          "bottomright",
-          pal = pal,
-          values = df$individual_local_identifier,
-          title = "individual_local_identifier"
+          position = "bottomright",
+          colors = cols_u,
+          labels = u,
+          title = "individual_local_identifier",
+          opacity = 1,
+          layerId = "points_legend"
         )
       } else {
         cols <- rep("#1f77b4", nrow(df))
@@ -564,7 +538,7 @@ server <- function(input, output, session) {
     ignoreInit = TRUE
   )
   
-  # Tracks: gradient segments + mini key
+  # Tracks: gradient segments + mini key (shinylive-safe palette)
   observeEvent(list(track_df(), track_redraw()), {
     df <- track_df()
     proxy <- leafletProxy("map") %>%
@@ -586,11 +560,12 @@ server <- function(input, output, session) {
       nseg <- nrow(d) - 1
       if (nseg < 1) next
       
-      pal_seg <- colorNumeric("viridis", domain = c(1, nseg))
+      # simple fixed gradient (no viridis dependency)
+      pal_seg <- grDevices::colorRampPalette(c("#440154", "#21908C", "#FDE725"))(nseg)
       
       if (isTRUE(input$show_track_key)) {
-        new_col <- pal_seg(nseg)
-        old_col <- pal_seg(1)
+        new_col <- pal_seg[nseg]
+        old_col <- pal_seg[1]
         proxy <- proxy %>%
           addControl(
             html = track_key_html(new_col, old_col),
@@ -607,7 +582,7 @@ server <- function(input, output, session) {
             group = "tracks",
             opacity = 0.9,
             weight = 4,
-            color = pal_seg(i)
+            color = pal_seg[i]
           )
       }
       
@@ -622,7 +597,7 @@ server <- function(input, output, session) {
           opacity = 1,
           fillOpacity = 1,
           color = "white",
-          fillColor = pal_seg(1),
+          fillColor = pal_seg[1],
           popup = paste0("<b>", id, "</b><br>Older<br>", d$timestamp_pacific[1] %||% "")
         ) %>%
         addCircleMarkers(
@@ -635,7 +610,7 @@ server <- function(input, output, session) {
           opacity = 1,
           fillOpacity = 1,
           color = "white",
-          fillColor = pal_seg(nseg),
+          fillColor = pal_seg[nseg],
           popup = paste0("<b>", id, "</b><br>Newer<br>", d$timestamp_pacific[nrow(d)] %||% "")
         )
     }
