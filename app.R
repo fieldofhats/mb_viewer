@@ -69,6 +69,14 @@ ui <- fluidPage(
             
             tags$hr(),
             
+            tags$strong("Newest point (Pacific): "),
+            textOutput("newest_pt_local", inline = TRUE),
+            
+            tags$hr(),
+            
+          
+            
+            
             checkboxInput("fit_data", "Zoom to data after plotting", value = TRUE),
             
             tags$hr(),
@@ -247,6 +255,18 @@ ui <- fluidPage(
 server <- function(input, output, session) {
   
   raw_dat <- reactiveVal(NULL)
+  
+  output$newest_pt_local <- renderText({
+    df <- raw_dat()
+    if (is.null(df) || !("timestamp_utc" %in% names(df)) || all(is.na(df$timestamp_utc))) {
+      return("—")
+    }
+    tmax <- suppressWarnings(max(df$timestamp_utc, na.rm = TRUE))
+    if (!is.finite(tmax)) return("—")
+    
+    paste0(format(tmax, tz = TZ_LOCAL, usetz = TRUE), "  (n=", nrow(df), ")")
+  })
+  
   
   # ---- Track key ----
   track_key_html <- function(new_col, old_col) {
