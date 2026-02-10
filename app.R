@@ -141,16 +141,17 @@ ui <- fluidPage(
           ),
           tabPanel(
             "Export",
-            helpText("testing 1 : Export the currently filtered table data."),
+            helpText("testing 2 : Export the currently filtered table data."),
             tags$hr(),
-            downloadButton("dl_filtered_csv", "Download filtered CSV"),
+            actionButton("btn_csv", "Download filtered CSV"),
             tags$div(style="height:8px;"),
             tags$hr(),
-            downloadButton("dl_caltopo_geojson", "Download Caltopo GeoJSON"),
+            actionButton("btn_pts_geojson", "Download Caltopo GeoJSON (points)"),
+            tags$div(style="height:8px;"),
             tags$hr(),
             
             tags$div(style="height:8px;"),
-            downloadButton("dl_caltopo_tracks_geojson", "Download Caltopo Tracks GeoJSON"),
+            actionButton("btn_tracks_geojson", "Download Caltopo Tracks GeoJSON"),
             tags$small(style="display:block; color:#666;",
                        "On the Display tab, individual must be selected and tracks turned on. 
                        If tracks are not on, the export will be empty"),
@@ -160,6 +161,7 @@ ui <- fluidPage(
             tags$small("Tip: The export uses the current filters (last N days / date range) and max points cap."),
             
             
+
             
           )
           
@@ -276,6 +278,34 @@ ui <- fluidPage(
     $(document).on('shiny:value', function() {
       setTimeout(bindColorPicker, 0);
     });
+    
+    // ---- client-side download helper (works on GitHub Pages) ----
+  function downloadTextFile(filename, mimeType, text) {
+    try {
+      const blob = new Blob([text], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+  
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+  
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        a.remove();
+      }, 100);
+    } catch (e) {
+      console.error('Download failed:', e);
+      alert('Download failed:'  + e.message);
+    }
+  }
+
+Shiny.addCustomMessageHandler('download_text_file', function(payload) {
+  downloadTextFile(payload.filename, payload.mimetype, payload.text);
+});
+
+    
   }
   "))
 )
@@ -501,41 +531,41 @@ server <- function(input, output, session) {
     if (is.null(df) || nrow(df) == 0) {
       return('{"type":"FeatureCollection","features":[]}')
     }
-    
+
     # Ensure required fields exist
     req_cols <- c("location_lat", "location_long", "timestamp_pacific",
                   "individual_local_identifier", "gps_fix_type_raw")
     for (nm in req_cols) if (!nm %in% names(df)) df[[nm]] <- NA
-    
+
     # Determine age order for gradient coloring (older -> newer)
     if ("timestamp_utc" %in% names(df) && any(!is.na(df$timestamp_utc))) {
       o <- order(df$timestamp_utc, na.last = TRUE)
     } else {
       o <- seq_len(nrow(df))
     }
-    
+
     n <- nrow(df)
     grad_cols <- grDevices::colorRampPalette(c("#440154", "#21908C", "#FDE725"))(max(1, n))
     cols_by_row <- rep(NA_character_, n)
     cols_by_row[o] <- grad_cols[seq_len(n)]
-    
+
     # Convert colors to Caltopo format: "FF0000" (no #, uppercase)
     cal_color <- toupper(gsub("^#", "", cols_by_row))
-    
+
     # Build features
     features <- vector("list", n)
     for (i in seq_len(n)) {
       lon <- df$location_long[i]
       lat <- df$location_lat[i]
       if (!is.finite(lon) || !is.finite(lat)) next
-      
+
       title <- as.character(df$timestamp_pacific[i] %||% "")
       desc <- paste0(
         "id: ", (df$individual_local_identifier[i] %||% ""), "\n",
         "gps type: ", (df$gps_fix_type_raw[i] %||% ""), "\n",
         "date_time: ", (df$timestamp_pacific[i] %||% "")
       )
-      
+
       features[[i]] <- list(
         type = "Feature",
         geometry = list(
@@ -554,16 +584,16 @@ server <- function(input, output, session) {
         )
       )
     }
-    
+
     # Drop NULLs from skipped rows (if any)
     features <- Filter(Negate(is.null), features)
-    
+
     geo <- list(type = "FeatureCollection", features = features)
-    
+
     # jsonlite is the cleanest way to emit valid JSON
     jsonlite::toJSON(geo, auto_unbox = TRUE, null = "null", digits = 8)
   }
-  
+
   
   
   
@@ -596,17 +626,17 @@ server <- function(input, output, session) {
   })
   
   
-  ## download json
-  output$dl_caltopo_geojson <- downloadHandler(
-    filename = function() {
-      paste0("caltopo_export_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".geojson")
-    },
-    content = function(file) {
-      df <- plot_df()   # <-- this matches the table + map filters/cap
-      txt <- make_caltopo_geojson(df)
-      writeLines(txt, con = file, useBytes = TRUE)
-    }
-  )
+  # ## download json
+  # output$dl_caltopo_geojson <- downloadHandler(
+  #   filename = function() {
+  #     paste0("caltopo_export_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".geojson")
+  #   },
+  #   content = function(file) {
+  #     df <- plot_df()   # <-- this matches the table + map filters/cap
+  #     txt <- make_caltopo_geojson(df)
+  #     writeLines(txt, con = file, useBytes = TRUE)
+  #   }
+  # )
   
   
   output$dl_filtered_csv <- downloadHandler(
@@ -839,16 +869,16 @@ server <- function(input, output, session) {
     if (!("individual_local_identifier" %in% names(df))) {
       return('{"type":"FeatureCollection","features":[]}')
     }
-    
+
     # order within id by time if available
     if ("timestamp_utc" %in% names(df) && any(!is.na(df$timestamp_utc))) {
       df <- df[order(df$individual_local_identifier, df$timestamp_utc), , drop = FALSE]
     } else {
       df <- df[order(df$individual_local_identifier), , drop = FALSE]
     }
-    
+
     ids <- unique(as.character(df$individual_local_identifier))
-    
+
     # define a consistent global gradient based on time across the *track_df*
     has_time <- "timestamp_utc" %in% names(df) && any(!is.na(df$timestamp_utc))
     if (has_time) {
@@ -857,18 +887,18 @@ server <- function(input, output, session) {
       span <- as.numeric(difftime(tmax, tmin, units = "secs"))
       if (!is.finite(span) || span <= 0) span <- 1
     }
-    
+
     features <- list()
-    
+
     for (id in ids) {
       d <- df[df$individual_local_identifier == id, , drop = FALSE]
       d <- d[is.finite(d$location_lat) & is.finite(d$location_long), , drop = FALSE]
       if (nrow(d) < 2) next
-      
+
       coords <- lapply(seq_len(nrow(d)), function(i) {
         list(as.numeric(d$location_long[i]), as.numeric(d$location_lat[i]))
       })
-      
+
       # pick one color per track based on "recency" of last point (mirrors gradient idea)
       # if (has_time && any(!is.na(d$timestamp_utc))) {
       #   tlast <- suppressWarnings(max(d$timestamp_utc, na.rm = TRUE))
@@ -880,17 +910,17 @@ server <- function(input, output, session) {
       # }
       # cal_color <- toupper(gsub("^#", "", col_hex))
       cal_color <- "#440154"
-      
+
       start_pt <- d$timestamp_pacific[1] %||% ""
       end_pt   <- d$timestamp_pacific[nrow(d)] %||% ""
-      
+
       desc <- paste0(
         "id: ", id, "\n",
         "start: ", start_pt, "\n",
         "end: ", end_pt, "\n",
         "n_points: ", nrow(d)
       )
-      
+
       features[[length(features) + 1]] <- list(
         type = "Feature",
         geometry = list(
@@ -907,22 +937,61 @@ server <- function(input, output, session) {
         )
       )
     }
-    
+
     geo <- list(type = "FeatureCollection", features = features)
     jsonlite::toJSON(geo, auto_unbox = TRUE, null = "null", digits = 8)
   }
+
+  # output$dl_caltopo_tracks_geojson <- downloadHandler(
+  #   filename = function() {
+  #     paste0("caltopo_tracks_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".geojson")
+  #   },
+  #   content = function(file) {
+  #     # track_df() already requires show_tracks==TRUE and selected individuals
+  #     df <- track_df()
+  #     txt <- make_caltopo_tracks_geojson(df)
+  #     writeLines(txt, con = file, useBytes = TRUE)
+  #   }
+  # )
   
-  output$dl_caltopo_tracks_geojson <- downloadHandler(
-    filename = function() {
-      paste0("caltopo_tracks_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".geojson")
-    },
-    content = function(file) {
-      # track_df() already requires show_tracks==TRUE and selected individuals
-      df <- track_df()
-      txt <- make_caltopo_tracks_geojson(df)
-      writeLines(txt, con = file, useBytes = TRUE)
-    }
-  )
+  
+  observeEvent(input$btn_csv, {
+    df <- plot_df()
+    
+    tmp <- tempfile(fileext = ".csv")
+    readr::write_csv(df, tmp)
+    txt <- paste(readLines(tmp, warn = FALSE), collapse = "\n")
+    unlink(tmp)
+    
+    session$sendCustomMessage("download_text_file", list(
+      filename = paste0("movebank_filtered_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
+      mimetype = "text/csv;charset=utf-8",
+      text = txt
+    ))
+  })
+  
+  observeEvent(input$btn_pts_geojson, {
+    df <- plot_df()
+    txt <- make_caltopo_geojson(df)
+    
+    session$sendCustomMessage("download_text_file", list(
+      filename = paste0("caltopo_points_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".geojson"),
+      mimetype = "application/geo+json;charset=utf-8",
+      text = txt
+    ))
+  })
+  
+  observeEvent(input$btn_tracks_geojson, {
+    # NOTE: this will only work if track_df() requirements are met
+    df <- track_df()
+    txt <- make_caltopo_tracks_geojson(df)
+    
+    session$sendCustomMessage("download_text_file", list(
+      filename = paste0("caltopo_tracks_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".geojson"),
+      mimetype = "application/geo+json;charset=utf-8",
+      text = txt
+    ))
+  })
   
   
   
