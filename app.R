@@ -81,7 +81,11 @@ ui <- fluidPage(
             checkboxInput("fit_data", "Zoom to data after plotting", value = TRUE),
             
             tags$hr(),
-            verbatimTextOutput("status")
+            verbatimTextOutput("status"),
+            tags$hr(),
+            tags$hr(),
+            tags$div(style="color:#888; font-size:12px;", paste("Build:", Sys.time()))
+            
           ),
           
           tabPanel(
@@ -141,7 +145,7 @@ ui <- fluidPage(
           ),
           tabPanel(
             "Export",
-            helpText("testing 2 : Export the currently filtered table data."),
+            helpText("Export the currently filtered table data."),
             tags$hr(),
             actionButton("btn_csv", "Download filtered CSV"),
             tags$div(style="height:8px;"),
