@@ -248,18 +248,21 @@ ui <- fluidPage(
 
   // ---- Bind native <input type=\"color\"> to Shiny ----
   function bindColorPicker() {
-    var el = document.getElementById('pt_color_single');
-    if (!el) return;
+  // In shinylive, Shiny may not exist yet at DOMContentLoaded
+  if (!window.Shiny || typeof Shiny.setInputValue !== 'function') return;
 
+  var el = document.getElementById('pt_color_single');
+  if (!el) return;
+
+  Shiny.setInputValue('pt_color_single', el.value, {priority: 'event'});
+
+  el.addEventListener('input', function() {
     Shiny.setInputValue('pt_color_single', el.value, {priority: 'event'});
-
-    el.addEventListener('input', function() {
-      Shiny.setInputValue('pt_color_single', el.value, {priority: 'event'});
-    });
-    el.addEventListener('change', function() {
-      Shiny.setInputValue('pt_color_single', el.value, {priority: 'event'});
-    });
-  }
+  });
+  el.addEventListener('change', function() {
+    Shiny.setInputValue('pt_color_single', el.value, {priority: 'event'});
+  });
+}
 
   document.addEventListener('DOMContentLoaded', function() {
     setTimeout(bindColorPicker, 0);
