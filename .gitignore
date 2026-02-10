@@ -7,7 +7,7 @@
 .RDataTmp
 
 #backup
-.bak
+#.bak
 
 # User-specific files
 .Ruserdata
