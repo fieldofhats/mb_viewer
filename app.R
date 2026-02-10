@@ -141,7 +141,7 @@ ui <- fluidPage(
           ),
           tabPanel(
             "Export",
-            helpText("Export the currently filtered table data."),
+            helpText("testing 1 : Export the currently filtered table data."),
             tags$hr(),
             downloadButton("dl_filtered_csv", "Download filtered CSV"),
             tags$div(style="height:8px;"),
