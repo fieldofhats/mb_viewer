@@ -978,6 +978,9 @@ server <- function(input, output, session) {
     df <- plot_df()
     txt <- make_caltopo_geojson(df)
     
+    # IMPORTANT: drop jsonlite's "json" class so Shiny sends a string, not an object
+    txt <- as.character(txt)
+    
     session$sendCustomMessage("download_text_file", list(
       filename = paste0("caltopo_points_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".geojson"),
       mimetype = "application/geo+json;charset=utf-8",
@@ -985,10 +988,13 @@ server <- function(input, output, session) {
     ))
   })
   
+  
   observeEvent(input$btn_tracks_geojson, {
-    # NOTE: this will only work if track_df() requirements are met
     df <- track_df()
     txt <- make_caltopo_tracks_geojson(df)
+    
+    # IMPORTANT: drop jsonlite's "json" class
+    txt <- as.character(txt)
     
     session$sendCustomMessage("download_text_file", list(
       filename = paste0("caltopo_tracks_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".geojson"),
@@ -996,6 +1002,7 @@ server <- function(input, output, session) {
       text = txt
     ))
   })
+  
   
   
   
