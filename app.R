@@ -104,7 +104,20 @@ ui <- fluidPage(
               "Keep only good fixes (gps_fix_type_raw contains 'QFP')",
               value = FALSE
             ),
-            
+            selectizeInput(
+              "filter_inds",
+              "Filter individuals",
+              choices = NULL,
+              selected = NULL,
+              multiple = TRUE,
+              options = list(
+                placeholder = "All individuals"
+              )
+            ),
+            tags$small(
+              style="display:block; margin-top:-6px; color:#666;",
+              "Leave empty to show all individuals.  Click ID to add, select ID and hit delete to remove"
+            )
           ),
           
           tabPanel(
@@ -463,11 +476,27 @@ server <- function(input, output, session) {
     if (is.null(df)) return()
     
     inds <- if ("individual_local_identifier" %in% names(df)) {
-      sort(unique(df$individual_local_identifier))
+      sort(unique(as.character(df$individual_local_identifier)))
     } else character(0)
     
-    updateSelectizeInput(session, "ind_select", choices = inds, selected = character(0), server = TRUE)
+    updateSelectizeInput(
+      session, "ind_select",
+      choices = inds,
+      selected = character(0),
+      server = TRUE
+    )
+    
+    updateSelectizeInput(
+      session, "filter_inds",
+      choices = inds,
+      selected = character(0),
+      server = TRUE
+    )
   })
+  
+  observeEvent(input$filter_inds, {
+    if (isTRUE(input$show_tracks)) track_redraw(isolate(track_redraw()) + 1)
+  }, ignoreInit = TRUE)
   
   # ---- Filtering + capping helpers ----
   apply_filters <- function(df) {
@@ -476,17 +505,37 @@ server <- function(input, output, session) {
     df <- df[is.finite(df$location_lat) & is.finite(df$location_long), , drop = FALSE]
     if (nrow(df) == 0) return(df)
     
-    # optional fix-quality filter
-    if (isTRUE(input$keep_qpf_only)) {
-      if ("gps_fix_type_raw" %in% names(df)) {
-        df <- df[grepl("QFP", df$gps_fix_type_raw %||% "", fixed = TRUE), , drop = FALSE]
+    # optional individual filter
+    if (!is.null(input$filter_inds) && length(input$filter_inds) > 0) {
+      if ("individual_local_identifier" %in% names(df)) {
+        df <- df[
+          as.character(df$individual_local_identifier) %in% input$filter_inds,
+          ,
+          drop = FALSE
+        ]
       } else {
-        # if field missing, return empty rather than silently ignoring
         df <- df[0, , drop = FALSE]
       }
       if (nrow(df) == 0) return(df)
     }
     
+    # optional fix-quality filter
+    if (isTRUE(input$keep_qpf_only)) {
+      if ("gps_fix_type_raw" %in% names(df)) {
+        x <- tolower(as.character(df$gps_fix_type_raw))
+        x[is.na(x)] <- ""
+        
+        df <- df[
+          grepl("qfp", x, fixed = TRUE) &
+            !grepl("unresolved qfp", x, fixed = TRUE),
+          ,
+          drop = FALSE
+        ]
+      } else {
+        df <- df[0, , drop = FALSE]
+      }
+      if (nrow(df) == 0) return(df)
+    }
     
     has_time <- "timestamp_utc" %in% names(df) && any(!is.na(df$timestamp_utc))
     
