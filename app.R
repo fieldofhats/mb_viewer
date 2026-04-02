@@ -121,14 +121,6 @@ ui <- fluidPage(
           ),
           
           tabPanel(
-            "Table",
-            checkboxInput("show_table", "Show table (split view)", value = TRUE),
-            checkboxInput("fit_selected", "Zoom to selected rows", value = FALSE),
-            tags$hr(),
-            uiOutput("col_ui")
-          ),
-          
-          tabPanel(
             "Display",
             sliderInput("pt_radius", "Point size", min = 1, max = 12, value = 3, step = 1),
             
@@ -150,12 +142,36 @@ ui <- fluidPage(
             
             tags$hr(),
             
+            checkboxInput("show_pt_highlight", "Highlight points", value = FALSE),
+            
+            conditionalPanel(
+              condition = "input.show_pt_highlight === true",
+              tagList(
+                selectInput(
+                  "pt_highlight_color",
+                  "Highlight color",
+                  choices = c("White" = "white", "Yellow" = "yellow", "Orange" = "orange"),
+                  selected = "white"
+                ),
+                sliderInput(
+                  "pt_highlight_scale",
+                  "Highlight size multiplier",
+                  min = 1,
+                  max = 2,
+                  value = 1.5,
+                  step = 0.1
+                )
+              )
+            ),
+            
+            
+            tags$hr(),
+            
             selectizeInput("ind_select", "Individuals for tracks (optional)", choices = NULL, multiple = TRUE),
             checkboxInput("show_tracks", "Draw tracks for selected individuals", value = FALSE),
-            checkboxInput("show_track_key", "Show track color key", value = TRUE),
-            
-            
+            checkboxInput("show_track_key", "Show track color key", value = TRUE)
           ),
+          
           tabPanel(
             "Export",
             helpText("Export the currently filtered table data."),
@@ -725,18 +741,45 @@ server <- function(input, output, session) {
   
   # Points + legend + zoom (shinylive-safe palettes)
   observeEvent(
-    list(plot_df(), input$pt_radius, input$pt_color_mode, input$pt_color_single),
+      list(
+        plot_df(),
+        input$pt_radius,
+        input$pt_color_mode,
+        input$pt_color_single,
+        input$show_pt_highlight,
+        input$pt_highlight_color,
+        input$pt_highlight_scale
+      ),
+      
     {
       df <- plot_df()
       proxy <- leafletProxy("map") %>%
+        clearGroup("pt_highlight") %>%
         clearGroup("points") %>%
         clearGroup("selected") %>%
         removeControl("points_legend")
+      
       
       if (nrow(df) == 0) return()
       
       r <- input$pt_radius %||% 3
       mode <- input$pt_color_mode %||% "by_id"
+      
+      show_hl <- isTRUE(input$show_pt_highlight)
+      hl_col <- switch(
+        input$pt_highlight_color %||% "white",
+        "white"  = "#FFFFFF",
+        "yellow" = "#FFD700",
+        "orange" = "#FF8C00",
+        "#FFFFFF"
+      )
+      
+      hl_mult <- input$pt_highlight_scale %||% 1.5
+      hl_radius <- pmax(r * hl_mult, r + 0.5)
+      
+      
+      # highlight radius scales with point size
+      #hl_radius <- max(r + 3, round(r * 1.8))
       
       if (identical(mode, "single")) {
         col <- input$pt_color_single %||% "#1f77b4"
@@ -770,6 +813,23 @@ server <- function(input, output, session) {
         "<br><b>lat:</b> ", df$location_lat,
         "<br><b>lon:</b> ", df$location_long
       )
+      
+      if (show_hl) {
+        proxy <- proxy %>%
+          addCircleMarkers(
+            data = df,
+            lng = ~location_long,
+            lat = ~location_lat,
+            radius = hl_radius,
+            stroke = FALSE,
+            fillOpacity = 0.85,
+            color = hl_col,
+            group = "pt_highlight",
+            layerId = paste0("hl_", df$row_id)
+          )
+      }
+      
+      
       
       proxy %>%
         addCircleMarkers(
