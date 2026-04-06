@@ -70,8 +70,9 @@ ui <- fluidPage(
             
             tags$hr(),
             
-            tags$strong("Newest point (Pacific): "),
-            textOutput("newest_pt_local", inline = TRUE),
+            tags$strong("Newest point by sensor (Pacific):"),
+            uiOutput("newest_pts_by_sensor"),
+            
             
             tags$hr(),
             
@@ -355,16 +356,55 @@ server <- function(input, output, session) {
   
   raw_dat <- reactiveVal(NULL)
   
-  output$newest_pt_local <- renderText({
+  output$newest_pts_by_sensor <- renderUI({
     df <- raw_dat()
-    if (is.null(df) || !("timestamp_utc" %in% names(df)) || all(is.na(df$timestamp_utc))) {
-      return("—")
-    }
-    tmax <- suppressWarnings(max(df$timestamp_utc, na.rm = TRUE))
-    if (!is.finite(tmax)) return("—")
     
-    paste0(format(tmax, tz = TZ_LOCAL, usetz = TRUE), "  (n=", nrow(df), ")")
+    if (is.null(df) || !("timestamp_utc" %in% names(df)) || all(is.na(df$timestamp_utc))) {
+      return(tags$div("—"))
+    }
+    
+    if (!("individual_local_identifier" %in% names(df))) {
+      tmax <- suppressWarnings(max(df$timestamp_utc, na.rm = TRUE))
+      if (!is.finite(tmax)) return(tags$div("—"))
+      
+      return(tags$div(
+        paste0(format(tmax, tz = TZ_LOCAL, usetz = TRUE), "  (n=", nrow(df), ")")
+      ))
+    }
+    
+    ids <- sort(unique(as.character(df$individual_local_identifier)))
+    ids <- ids[!is.na(ids) & nzchar(ids)]
+    
+    if (length(ids) == 0) {
+      tmax <- suppressWarnings(max(df$timestamp_utc, na.rm = TRUE))
+      if (!is.finite(tmax)) return(tags$div("—"))
+      
+      return(tags$div(
+        paste0(format(tmax, tz = TZ_LOCAL, usetz = TRUE), "  (n=", nrow(df), ")")
+      ))
+    }
+    
+    rows <- lapply(ids, function(id) {
+      d <- df[as.character(df$individual_local_identifier) == id, , drop = FALSE]
+      d <- d[!is.na(d$timestamp_utc), , drop = FALSE]
+      
+      if (nrow(d) == 0) {
+        tags$div(
+          tags$strong(paste0(id, ": ")),
+          "—"
+        )
+      } else {
+        tmax <- suppressWarnings(max(d$timestamp_utc, na.rm = TRUE))
+        tags$div(
+          tags$strong(paste0(id, ": ")),
+          paste0(format(tmax, tz = TZ_LOCAL, usetz = TRUE), "  (n=", nrow(d), ")")
+        )
+      }
+    })
+    
+    do.call(tagList, rows)
   })
+  
   
   
   # ---- Track key ----
