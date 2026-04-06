@@ -121,6 +121,14 @@ ui <- fluidPage(
           ),
           
           tabPanel(
+            "Table",
+            checkboxInput("show_table", "Show table (split view)", value = TRUE),
+            checkboxInput("fit_selected", "Zoom to selected rows", value = FALSE),
+            tags$hr(),
+            uiOutput("col_ui")
+          ),
+          
+          tabPanel(
             "Display",
             sliderInput("pt_radius", "Point size", min = 1, max = 12, value = 3, step = 1),
             
